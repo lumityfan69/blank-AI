@@ -1,72 +1,114 @@
 import streamlit as st
 import random
 
-# --- CHAT BRAIN INITIALIZATION ---
-# We store the memory inside st.session_state so it is private to this browser tab.
-# We no longer read or write to a shared JSON file.
+# --- INITIALIZATION ---
 if "isolated_memory" not in st.session_state:
-    st.session_state.isolated_memory = {}
+    st.session_state.isolated_memory = {}  # Conversational responses
+
+if "dictionary" not in st.session_state:
+    st.session_state.dictionary = {}       # Core definitions/meanings
 
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
 
-if "unknown_word" not in st.session_state:
-    st.session_state.unknown_word = None
+if "learning_state" not in st.session_state:
+    # Tracks the word and target type we are currently teaching the AI
+    st.session_state.learning_state = None
 
-# --- PRIVATE SIDEBAR CONTROLS ---
+# --- SIDEBAR: MODE SELECTION & CONTROLS ---
 with st.sidebar:
-    st.header("⚙️ Private Brain Settings")
-    st.write("Phrases learned in this session:", len(st.session_state.isolated_memory))
-    st.info("Your AI's memory is private to this browser tab. Refreshing or closing the tab resets it back to zero!")
+    st.header("⚙️ Brain Control Panel")
     
-    # Red button to erase ONLY this user's memory state
-    if st.button("🚨 Reset My AI Memory", type="primary"):
+    # Let the user choose how they want to interact with the AI
+    app_mode = st.radio(
+        "Select Interaction Mode:",
+        ["Chitchat Mode 💬", "Teach Definitions 📖"]
+    )
+    
+    st.divider()
+    st.write(f"🧠 Vocabulary Learned: {len(st.session_state.dictionary)} words")
+    st.write(f"💬 Conversational Links: {len(st.session_state.isolated_memory)} phrases")
+    
+    if st.button("🚨 Reset AI Brain", type="primary"):
         st.session_state.isolated_memory = {}
+        st.session_state.dictionary = {}
         st.session_state.chat_history = []
-        st.session_state.unknown_word = None
-        st.success("Your private session has been wiped clean!")
+        st.session_state.learning_state = None
+        st.success("Wiped back to absolute zero!")
         st.rerun()
 
-# --- MAIN CHAT INTERFACE ---
-st.title("🧠 The Isolated Blank Slate AI")
-st.caption("Your own private version of the AI. It learns exclusively from your text inputs during this session!")
+# --- MAIN INTERFACE ---
+st.title("🧠 The Blank Slate AI")
+st.caption("Now with dedicated conversational training and factual dictionary lookup!")
 
-# Display full chat history
+# Show history
 for message in st.session_state.chat_history:
     with st.chat_message(message["role"]):
         st.markdown(message["text"])
 
-# Handle user input
-if user_input := st.chat_input("Type something to teach your AI..."):
-    # 1. Display user message
+# Handle interaction loop
+if user_input := st.chat_input("Type here..."):
+    # Display user input
     with st.chat_message("user"):
         st.markdown(user_input)
     st.session_state.chat_history.append({"role": "user", "text": user_input})
     
     clean_input = user_input.strip().lower()
-    
-    # CASE A: The AI is waiting for a definition of an unknown phrase
-    if st.session_state.unknown_word:
-        target_phrase = st.session_state.unknown_word
+    ai_response = ""
+
+    # CASE 1: The AI is currently waiting for a piece of information from the previous turn
+    if st.session_state.learning_state:
+        state_type = st.session_state.learning_state["type"]
+        target_word = st.session_state.learning_state["word"]
         
-        if target_phrase not in st.session_state.isolated_memory:
-            st.session_state.isolated_memory[target_phrase] = []
+        if state_type == "definition":
+            # Save the literal meaning of the word
+            st.session_state.dictionary[target_word] = user_input.strip()
+            ai_response = f"Got it! I now know that **{target_word}** means: '{user_input}'."
+        
+        elif state_type == "reply":
+            # Save a conversation chain link
+            if target_word not in st.session_state.isolated_memory:
+                st.session_state.isolated_memory[target_word] = []
+            if clean_input not in st.session_state.isolated_memory[target_word]:
+                st.session_state.isolated_memory[target_word].append(clean_input)
+            ai_response = f"Understood! If you say '{target_word}', I might reply with '{user_input}'."
             
-        if clean_input not in st.session_state.isolated_memory[target_phrase]:
-            st.session_state.isolated_memory[target_phrase].append(clean_input)
-            
-        ai_response = f"Got it! I saved that. From now on, when you say '{target_phrase}', I might reply with '{user_input}'."
-        st.session_state.unknown_word = None 
+        st.session_state.learning_state = None  # Clear training track
 
-    # CASE B: Standard conversational lookup
+    # CASE 2: Mode handling for normal interaction
     else:
-        if clean_input in st.session_state.isolated_memory and st.session_state.isolated_memory[clean_input]:
-            ai_response = random.choice(st.session_state.isolated_memory[clean_input])
+        # Mode A: User wants to manually program a hard word definition
+        if app_mode == "Teach Definitions 📖":
+            ai_response = f"I've flagged the phrase '{user_input}'. Now, please tell me: what is the **definition** of '{user_input}'?"
+            st.session_state.learning_state = {"type": "definition", "word": clean_input}
+            
+        # Mode B: Standard Chitchat Mode
         else:
-            ai_response = f"I have never heard the phrase '{user_input}' before. What should I say when you say that?"
-            st.session_state.unknown_word = clean_input
+            # First, check if the user is asking for a definition (e.g., "what is apple?")
+            is_asking_definition = False
+            lookup_word = clean_input
+            
+            for trigger in ["what is ", "what's a ", "what's an ", "define "]:
+                if clean_input.startswith(trigger):
+                    lookup_word = clean_input.replace(trigger, "").strip()
+                    is_asking_definition = True
+                    break
+            
+            if is_asking_definition:
+                if lookup_word in st.session_state.dictionary:
+                    ai_response = f"According to my dictionary, **{lookup_word}** means: {st.session_state.dictionary[lookup_word]}"
+                else:
+                    ai_response = f"I don't know the definition of '{lookup_word}' yet. Switch my sidebar mode to 'Teach Definitions' to teach it to me!"
+            else:
+                # Fall back to traditional conversational dialogue response
+                if clean_input in st.session_state.isolated_memory and st.session_state.isolated_memory[clean_input]:
+                    ai_response = random.choice(st.session_state.isolated_memory[clean_input])
+                else:
+                    ai_response = f"I don't know how to chat back to '{user_input}' yet. What should I reply when you say that?"
+                    st.session_state.learning_state = {"type": "reply", "word": clean_input}
 
-    # 4. Display AI response
+    # Display and log the final AI output
     with st.chat_message("assistant"):
         st.markdown(ai_response)
     st.session_state.chat_history.append({"role": "assistant", "text": ai_response})
