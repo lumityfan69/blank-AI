@@ -6,7 +6,7 @@ import random
 DATABASE_FILE = "ai_memory.json"
 
 def load_memory():
-    if os.path.exists(DATABASE_FILE):
+    if op.path.exists(DATABASE_FILE):
         with open(DATABASE_FILE, "r", encoding="utf-8") as f:
             return json.load(f)
     return {}
