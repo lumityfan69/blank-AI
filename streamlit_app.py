@@ -15,6 +15,7 @@ def save_memory(memory):
     with open(DATABASE_FILE, "w", encoding="utf-8") as f:
         json.dump(memory, f, indent=4)
 
+# Initialize memory and state
 if "memory" not in st.session_state:
     st.session_state.memory = load_memory()
 
@@ -22,11 +23,25 @@ if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
 
 if "unknown_word" not in st.session_state:
-    # Tracks if the AI is currently waiting for a definition of an unknown phrase
     st.session_state.unknown_word = None
 
-st.title("🧠 The Blank Slate AI (Fixed)")
-st.caption("Now with Interactive Training Mode!")
+# --- SIDEBAR RESET CONTROLS ---
+with st.sidebar:
+    st.header("⚙️ Brain Settings")
+    st.write("Total phrases learned:", len(st.session_state.memory))
+    
+    # Red button to erase the database
+    if st.button("🚨 Reset AI Memory", type="primary"):
+        st.session_state.memory = {}
+        st.session_state.chat_history = []
+        st.session_state.unknown_word = None
+        save_memory({}) # Overwrite JSON file with empty memory
+        st.success("Memory completely wiped! Back to absolute zero.")
+        st.rerun()
+
+# --- MAIN APP INTERFACE ---
+st.title("🧠 The Blank Slate AI")
+st.caption("Now with Interactive Training Mode & Reset Switches!")
 
 # Display full chat history
 for message in st.session_state.chat_history:
@@ -42,7 +57,7 @@ if user_input := st.chat_input("Type something to teach the AI..."):
     
     clean_input = user_input.strip().lower()
     
-    # CASE A: The AI previously hit a blank wall and asked you to teach it
+    # CASE A: The AI is waiting for a definition of an unknown phrase
     if st.session_state.unknown_word:
         target_phrase = st.session_state.unknown_word
         
@@ -54,15 +69,13 @@ if user_input := st.chat_input("Type something to teach the AI..."):
             save_memory(st.session_state.memory)
             
         ai_response = f"Got it! I saved that. From now on, when you say '{target_phrase}', I might reply with '{user_input}'."
-        st.session_state.unknown_word = None # Clear the training flag
+        st.session_state.unknown_word = None 
 
     # CASE B: Standard conversational lookup
     else:
         if clean_input in st.session_state.memory and st.session_state.memory[clean_input]:
-            # The AI found an answer it has learned before!
             ai_response = random.choice(st.session_state.memory[clean_input])
         else:
-            # The AI hits a blank wall. It flags this word to learn it on the next turn!
             ai_response = f"I have never heard the phrase '{user_input}' before. What should I say when you say that?"
             st.session_state.unknown_word = clean_input
 
